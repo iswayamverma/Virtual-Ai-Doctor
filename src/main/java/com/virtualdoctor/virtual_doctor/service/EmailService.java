@@ -1,30 +1,30 @@
 package com.virtualdoctor.virtual_doctor.service;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import java.util.HashMap;
+import java.util.Map;
+
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
-import jakarta.mail.internet.MimeMessage;
+import org.springframework.web.reactive.function.client.WebClient;
 
 @Service
 public class EmailService {
 
-    @Autowired
-    private JavaMailSender mailSender;
+    @Value("${brevo.api.key}")
+    private String brevoApiKey;
 
-    @Value("${spring.mail.username}")
+    @Value("${brevo.sender.email}")
     private String fromEmail;
+
+    @Value("${brevo.sender.name:MediAI Health Alert}")
+    private String fromName;
+
+    private final WebClient webClient = WebClient.builder()
+            .baseUrl("https://api.brevo.com/v3")
+            .build();
 
     public void sendHighSeverityAlert(String toEmail, String patientName) {
         try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true);
-
-            helper.setFrom(fromEmail);
-            helper.setTo(toEmail);
-            helper.setSubject("🚨 MediAI Health Alert — Immediate Medical Attention Required");
-
             String htmlContent = "<!DOCTYPE html>" +
                     "<html><head><style>" +
                     "body { font-family: Arial, sans-serif; background: #f0f4f8; margin: 0; padding: 0; }" +
@@ -76,12 +76,34 @@ public class EmailService {
                     "</div>" +
                     "</body></html>";
 
-            helper.setText(htmlContent, true);
-            mailSender.send(message);
-            System.out.println("HIGH severity alert email sent to: " + toEmail);
+            Map<String, String> sender = new HashMap<>();
+            sender.put("name", fromName);
+            sender.put("email", fromEmail);
+
+            Map<String, String> recipient = new HashMap<>();
+            recipient.put("email", toEmail);
+            recipient.put("name", patientName);
+
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("sender", sender);
+            requestBody.put("to", new Map[] { recipient });
+            requestBody.put("subject", "🚨 MediAI Health Alert — Immediate Medical Attention Required");
+            requestBody.put("htmlContent", htmlContent);
+
+            String response = webClient.post()
+                    .uri("/smtp/email")
+                    .header("api-key", brevoApiKey)
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "application/json")
+                    .bodyValue(requestBody)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            System.out.println("HIGH severity alert email sent to: " + toEmail + " | Brevo response: " + response);
 
         } catch (Exception e) {
-            System.out.println("Failed to send email: " + e.getMessage());
+            System.out.println("Failed to send email via Brevo: " + e.getMessage());
         }
     }
 }
