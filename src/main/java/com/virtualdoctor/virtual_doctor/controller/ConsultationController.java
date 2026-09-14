@@ -4,6 +4,7 @@ import com.virtualdoctor.virtual_doctor.model.Message;
 import com.virtualdoctor.virtual_doctor.model.Session;
 import com.virtualdoctor.virtual_doctor.service.ConsultationService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -47,5 +48,22 @@ public class ConsultationController {
     public ResponseEntity<List<Message>> getMessages(@PathVariable Long sessionId) {
         List<Message> messages = consultationService.getMessages(sessionId);
         return ResponseEntity.ok(messages);
+    }
+
+    // ✅ ADDED - for the "Send Report" button in the UI (LOW/MEDIUM severity sessions)
+    @PostMapping("/report/{sessionId}")
+    public ResponseEntity<Map<String, String>> sendReport(
+            @PathVariable Long sessionId,
+            Authentication authentication) {
+        try {
+            String email = authentication.getName();
+            consultationService.sendReportOnDemand(sessionId, email);
+            return ResponseEntity.ok(Map.of("message", "Report sent successfully to your email."));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("message", "Failed to send report: " + e.getMessage()));
+        }
     }
 }

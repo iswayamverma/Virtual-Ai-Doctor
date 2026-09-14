@@ -26,7 +26,10 @@ public class ConsultationService {
     private AiService aiService;
 
     @Autowired
-    private EmailService emailService; // ✅ ADDED
+    private EmailService emailService;
+
+    @Autowired
+    private ReportService reportService; // ✅ ADDED
 
     public Session startSession(String email) {
         User user = userRepository.findByEmail(email).orElseThrow();
@@ -77,11 +80,12 @@ public class ConsultationService {
         aiMsg.setContent(aiResponse);
         messageRepository.save(aiMsg);
 
-        // ✅ Severity detection + email trigger
-        if (aiResponse.contains("[SEVERITY: HIGH]")) {
+        // Normalize for forgiving severity matching (handles spacing/case differences from the AI)
+        String normalized = aiResponse.toUpperCase().replaceAll("\\s+", "");
+
+        if (normalized.contains("[SEVERITY:HIGH]")) {
             session.setSeverity("HIGH");
-            emailService.sendHighSeverityAlert(user.getEmail(), user.getName()); // ✅ ADDED
-        } else if (aiResponse.contains("[SEVERITY: MEDIUM]")) {
+        } else if (normalized.contains("[SEVERITY:MEDIUM]")) {
             session.setSeverity("MEDIUM");
         } else {
             session.setSeverity("LOW");
@@ -90,7 +94,29 @@ public class ConsultationService {
         session.setDiagnosis(aiResponse.substring(0, Math.min(aiResponse.length(), 500)));
         sessionRepository.save(session);
 
+        // ✅ HIGH severity: send both the urgent alert and the full report automatically
+        if ("HIGH".equals(session.getSeverity())) {
+            emailService.sendHighSeverityAlert(user.getEmail(), user.getName());
+
+            byte[] pdfBytes = reportService.generateReportPdf(session, user);
+            emailService.sendConsultationReport(user.getEmail(), user.getName(), pdfBytes);
+        }
+
         return aiResponse;
+    }
+
+    // ✅ ADDED - for the "Send Report" button (LOW/MEDIUM severity, user-triggered)
+    public void sendReportOnDemand(Long sessionId, String email) {
+        Session session = sessionRepository.findById(sessionId).orElseThrow();
+        User user = userRepository.findByEmail(email).orElseThrow();
+
+        // Ensure the requesting user actually owns this session
+        if (!session.getUser().getId().equals(user.getId())) {
+            throw new SecurityException("You are not authorized to access this session's report.");
+        }
+
+        byte[] pdfBytes = reportService.generateReportPdf(session, user);
+        emailService.sendConsultationReport(user.getEmail(), user.getName(), pdfBytes);
     }
 
     public List<Session> getHistory(String email) {
