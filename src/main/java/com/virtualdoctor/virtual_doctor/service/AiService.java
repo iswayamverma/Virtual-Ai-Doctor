@@ -69,29 +69,68 @@ public class AiService {
             userMsg.put("content", conversationHistory + "\nUser: " + userMessage);
             messages.add(userMsg);
 
-            Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("model", "openai/gpt-oss-20b");
-            requestBody.put("messages", messages);
-
-            String requestJson = objectMapper.writeValueAsString(requestBody);
-
-            String response = webClient.post()
-                    .uri("/openai/v1/chat/completions")
-                    .header("Authorization", "Bearer " + apiKey)
-                    .header("Content-Type", "application/json")
-                    .bodyValue(requestJson)
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block();
-
-            Map responseMap = objectMapper.readValue(response, Map.class);
-            List choices = (List) responseMap.get("choices");
-            Map firstChoice = (Map) choices.get(0);
-            Map message = (Map) firstChoice.get("message");
-            return (String) message.get("content");
+            return callGroq(messages);
 
         } catch (Exception e) {
             return "Error: " + e.getMessage();
         }
+    }
+
+    // ✅ ADDED - called once, when a session ends, to produce a clean clinical summary
+    public String summarizeConversation(String fullTranscript, String userContext) {
+        try {
+            String systemPrompt = "You are a medical scribe AI. Below is a full transcript of a conversation " +
+                    "between a patient and an AI virtual doctor. Write a clear, structured clinical summary of " +
+                    "this consultation, covering: " +
+                    "1) Symptoms reported by the patient and how they evolved through the conversation. " +
+                    "2) Relevant patient profile details, if provided. " +
+                    "3) The AI doctor's overall assessment or likely diagnosis. " +
+                    "4) Recommended next steps or care advice given. " +
+                    "Write in clear, professional medical language suitable for a printed report. " +
+                    "Do NOT include severity tags like [SEVERITY: ...] in this summary — write plain prose only. " +
+                    "Keep it concise: 150-300 words." +
+                    (userContext != null && !userContext.isEmpty() ?
+                            "\n\nPatient Profile:\n" + userContext : "");
+
+            List<Map<String, String>> messages = new ArrayList<>();
+
+            Map<String, String> systemMessage = new HashMap<>();
+            systemMessage.put("role", "system");
+            systemMessage.put("content", systemPrompt);
+            messages.add(systemMessage);
+
+            Map<String, String> userMsg = new HashMap<>();
+            userMsg.put("role", "user");
+            userMsg.put("content", "Conversation transcript:\n" + fullTranscript);
+            messages.add(userMsg);
+
+            return callGroq(messages);
+
+        } catch (Exception e) {
+            return "Summary could not be generated due to an error: " + e.getMessage();
+        }
+    }
+
+    private String callGroq(List<Map<String, String>> messages) throws Exception {
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("model", "openai/gpt-oss-20b");
+        requestBody.put("messages", messages);
+
+        String requestJson = objectMapper.writeValueAsString(requestBody);
+
+        String response = webClient.post()
+                .uri("/openai/v1/chat/completions")
+                .header("Authorization", "Bearer " + apiKey)
+                .header("Content-Type", "application/json")
+                .bodyValue(requestJson)
+                .retrieve()
+                .bodyToMono(String.class)
+                .block();
+
+        Map responseMap = objectMapper.readValue(response, Map.class);
+        List choices = (List) responseMap.get("choices");
+        Map firstChoice = (Map) choices.get(0);
+        Map message = (Map) firstChoice.get("message");
+        return (String) message.get("content");
     }
 }

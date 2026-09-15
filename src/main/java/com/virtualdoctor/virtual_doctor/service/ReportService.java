@@ -1,19 +1,26 @@
 package com.virtualdoctor.virtual_doctor.service;
 
-import com.lowagie.text.*;
-import com.lowagie.text.pdf.PdfWriter;
-import com.virtualdoctor.virtual_doctor.model.Session;
-import com.virtualdoctor.virtual_doctor.model.User;
-import org.springframework.stereotype.Service;
-
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
 import java.time.format.DateTimeFormatter;
 
+import org.springframework.stereotype.Service;
+
+import com.lowagie.text.Chunk;
+import com.lowagie.text.Document;
+import com.lowagie.text.DocumentException;
+import com.lowagie.text.Font;
+import com.lowagie.text.PageSize;
+import com.lowagie.text.Paragraph;
+import com.lowagie.text.pdf.PdfWriter;
+import com.virtualdoctor.virtual_doctor.model.Session;
+import com.virtualdoctor.virtual_doctor.model.User;
+
 @Service
 public class ReportService {
 
-    public byte[] generateReportPdf(Session session, User user) {
+    // ✅ CHANGED - now takes the full AI-generated summary text directly
+    public byte[] generateReportPdf(Session session, User user, String summaryText) {
         try {
             Document document = new Document(PageSize.A4, 50, 50, 50, 50);
             ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -65,7 +72,13 @@ public class ReportService {
             String dateStr = session.getCreatedAt() != null
                     ? session.getCreatedAt().format(DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a"))
                     : "N/A";
-            addField(document, "Date:", dateStr, labelFont, valueFont);
+            addField(document, "Started:", dateStr, labelFont, valueFont);
+
+            String endedStr = session.getEndedAt() != null
+                    ? session.getEndedAt().format(DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a"))
+                    : "N/A";
+            addField(document, "Ended:", endedStr, labelFont, valueFont);
+
             addField(document, "Session ID:", String.valueOf(session.getId()), labelFont, valueFont);
 
             String severity = session.getSeverity() != null ? session.getSeverity() : "N/A";
@@ -73,23 +86,23 @@ public class ReportService {
                     : "MEDIUM".equalsIgnoreCase(severity) ? new Color(230, 160, 30)
                     : new Color(0, 150, 100);
             Paragraph severityPara = new Paragraph();
-            severityPara.add(new Chunk("Severity: ", labelFont));
+            severityPara.add(new Chunk("Highest Severity Reached: ", labelFont));
             severityPara.add(new Chunk(severity, new Font(Font.HELVETICA, 11, Font.BOLD, severityColor)));
             severityPara.setSpacingAfter(6);
             document.add(severityPara);
 
             document.add(spacer(10));
 
-            // Diagnosis
-            document.add(new Paragraph("AI Diagnosis & Summary", sectionFont));
+            // Summary (AI-generated)
+            document.add(new Paragraph("Consultation Summary", sectionFont));
             document.add(spacer(6));
 
-            String diagnosisText = session.getDiagnosis() != null && !session.getDiagnosis().isEmpty()
-                    ? session.getDiagnosis()
-                    : "No diagnosis summary available.";
-            Paragraph diagnosisPara = new Paragraph(diagnosisText, valueFont);
-            diagnosisPara.setSpacingAfter(20);
-            document.add(diagnosisPara);
+            String summary = (summaryText != null && !summaryText.isEmpty())
+                    ? summaryText
+                    : "No summary available for this session.";
+            Paragraph summaryPara = new Paragraph(summary, valueFont);
+            summaryPara.setSpacingAfter(20);
+            document.add(summaryPara);
 
             // Disclaimer
             document.add(spacer(10));
