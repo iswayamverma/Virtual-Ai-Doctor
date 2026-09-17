@@ -34,6 +34,9 @@ public class ConsultationService {
     @Autowired
     private ReportService reportService;
 
+    @Autowired
+    private ConsultationContext consultationContext;
+
     public Session startSession(String email) {
         User user = userRepository.findByEmail(email).orElseThrow();
         Session session = new Session();
@@ -44,75 +47,41 @@ public class ConsultationService {
     }
 
     public String chat(Long sessionId, String userMessage, String email) {
-        Session session = sessionRepository.findById(sessionId).orElseThrow();
+    Session session = sessionRepository.findById(sessionId).orElseThrow();
 
-        if (Boolean.TRUE.equals(session.getEnded())) {
-            throw new IllegalStateException("This consultation has already ended. Please start a new session.");
-        }
-
-        Message userMsg = new Message();
-        userMsg.setSession(session);
-        userMsg.setSender("user");
-        userMsg.setContent(userMessage);
-        messageRepository.save(userMsg);
-
-        List<Message> history = messageRepository.findBySessionIdOrderByCreatedAtAsc(sessionId);
-        StringBuilder conversationHistory = new StringBuilder();
-        for (Message msg : history) {
-            conversationHistory.append(msg.getSender())
-                    .append(": ")
-                    .append(msg.getContent())
-                    .append("\n");
-        }
-
-        User user = userRepository.findByEmail(email).orElseThrow();
-        StringBuilder userContext = new StringBuilder();
-        if (user.getAge() != null)
-            userContext.append("Age: ").append(user.getAge()).append("\n");
-        if (user.getBloodGroup() != null && !user.getBloodGroup().isEmpty())
-            userContext.append("Blood Group: ").append(user.getBloodGroup()).append("\n");
-        if (user.getAllergies() != null && !user.getAllergies().isEmpty())
-            userContext.append("Known Allergies: ").append(user.getAllergies()).append("\n");
-        if (user.getMedicalHistory() != null && !user.getMedicalHistory().isEmpty())
-            userContext.append("Medical History: ").append(user.getMedicalHistory()).append("\n");
-
-        String aiResponse = aiService.getAiResponse(
-                userMessage,
-                conversationHistory.toString(),
-                userContext.toString()
-        );
-
-        Message aiMsg = new Message();
-        aiMsg.setSession(session);
-        aiMsg.setSender("ai");
-        aiMsg.setContent(aiResponse);
-        messageRepository.save(aiMsg);
-
-        // Forgiving severity match (handles spacing/case differences from the AI)
-        String normalized = aiResponse.toUpperCase().replaceAll("\\s+", "");
-        String detectedSeverity;
-        if (normalized.contains("[SEVERITY:HIGH]")) {
-            detectedSeverity = "HIGH";
-        } else if (normalized.contains("[SEVERITY:MEDIUM]")) {
-            detectedSeverity = "MEDIUM";
-        } else {
-            detectedSeverity = "LOW";
-        }
-
-        // ✅ Severity only ever upgrades during a session, never downgrades
-        if (severityRank(detectedSeverity) > severityRank(session.getSeverity())) {
-            session.setSeverity(detectedSeverity);
-        }
-
-        session.setDiagnosis(aiResponse.substring(0, Math.min(aiResponse.length(), 500)));
-        session.setUpdatedAt(LocalDateTime.now()); // ✅ used by the auto-timeout scheduler
-        sessionRepository.save(session);
-
-        // ✅ No email sending here anymore - that now only happens when the session ends
-
-        return aiResponse;
+    if (Boolean.TRUE.equals(session.getEnded())) {
+        throw new IllegalStateException("This consultation has already ended. Please start a new session.");
     }
 
+    Message userMsg = new Message();
+    userMsg.setSession(session);
+    userMsg.setSender("user");
+    userMsg.setContent(userMessage);
+    messageRepository.save(userMsg);
+
+    consultationContext.setSessionId(sessionId);
+    String aiResponse;
+    try {
+        aiResponse = aiService.chat(sessionId, userMessage);
+    } finally {
+        consultationContext.clear();
+    }
+
+    Message aiMsg = new Message();
+    aiMsg.setSession(session);
+    aiMsg.setSender("ai");
+    aiMsg.setContent(aiResponse);
+    messageRepository.save(aiMsg);
+
+    // Re-fetch: a flagHighSeverity tool call may have updated severity mid-call.
+    // Saving the pre-call `session` object here would silently clobber that.
+    session = sessionRepository.findById(sessionId).orElseThrow();
+    session.setDiagnosis(aiResponse.substring(0, Math.min(aiResponse.length(), 500)));
+    session.setUpdatedAt(LocalDateTime.now());
+    sessionRepository.save(session);
+
+    return aiResponse;
+}
     // ✅ ADDED - manual "End Consultation" button calls this
     public void endSession(Long sessionId, String email) {
         Session session = sessionRepository.findById(sessionId).orElseThrow();
