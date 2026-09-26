@@ -27,15 +27,15 @@ public class ChatClientConfig {
                 .build();
     }
 
-    // The 'mcpToolCallbacks' provider is auto-configured by spring-ai-starter-mcp-client
-    // from the loopback connection defined in application.properties.
+    // Uses the in-process 'consultationTools' bean from ToolConfig.java directly -
+    // no network loopback, no startup ordering issue.
     @Bean
     public ChatClient doctorChatClient(ChatClient.Builder builder,
-                                        ToolCallbackProvider mcpToolCallbacks,
+                                        ToolCallbackProvider consultationTools,
                                         ChatMemory chatMemory) {
         return builder
                 .defaultSystem(SYSTEM_PROMPT)
-                .defaultToolCallbacks(mcpToolCallbacks)
+                .defaultToolCallbacks(consultationTools)
                 .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
                 .build();
     }
