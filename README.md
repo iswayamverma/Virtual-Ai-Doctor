@@ -4,6 +4,8 @@ An AI-powered virtual doctor web application that lets users describe their symp
 
 🔗 **Live Demo:** [virtual-ai-doctor-frontend.vercel.app](https://virtual-ai-doctor-frontend.vercel.app)
 
+📝 Blog post: https://dev.to/iswayamverma/how-i-rebuilt-my-ai-doctor-app-with-spring-ai-and-mcp-and-stopped-stuffing-prompts-40b1
+
 ---
 
 ## ✨ Features
